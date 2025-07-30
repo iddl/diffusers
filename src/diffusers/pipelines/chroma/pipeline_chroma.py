@@ -879,31 +879,49 @@ class ChromaPipeline(
                 # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
                 timestep = t.expand(latents.shape[0]).to(latents.dtype)
 
-                noise_pred = self.transformer(
-                    hidden_states=latents,
-                    timestep=timestep / 1000,
-                    encoder_hidden_states=prompt_embeds,
-                    txt_ids=text_ids,
-                    img_ids=latent_image_ids,
-                    attention_mask=attention_mask,
-                    joint_attention_kwargs=self.joint_attention_kwargs,
-                    return_dict=False,
-                )[0]
-
                 if self.do_classifier_free_guidance:
-                    if negative_image_embeds is not None:
-                        self._joint_attention_kwargs["ip_adapter_image_embeds"] = negative_image_embeds
-                    neg_noise_pred = self.transformer(
-                        hidden_states=latents,
-                        timestep=timestep / 1000,
-                        encoder_hidden_states=negative_prompt_embeds,
-                        txt_ids=negative_text_ids,
+                    # Batch positive and negative prompts for single transformer call
+                    batched_latents = torch.cat([latents, latents], dim=0)
+                    batched_timestep = torch.cat([timestep, timestep], dim=0)
+                    batched_encoder_hidden_states = torch.cat([prompt_embeds, negative_prompt_embeds], dim=0)
+                    batched_txt_ids = torch.cat([text_ids, negative_text_ids], dim=0)
+                    batched_img_ids = torch.cat([latent_image_ids, latent_image_ids], dim=0)
+
+                    # Handle attention masks
+                    if attention_mask is not None and negative_attention_mask is not None:
+                        batched_attention_mask = torch.cat([attention_mask, negative_attention_mask], dim=0)
+                    else:
+                        batched_attention_mask = None
+
+                    # Single transformer call with batched inputs
+                    batched_noise_pred = self.transformer(
+                        hidden_states=batched_latents,
+                        timestep=batched_timestep / 1000,
+                        encoder_hidden_states=batched_encoder_hidden_states,
+                        txt_ids=text_ids,
                         img_ids=latent_image_ids,
-                        attention_mask=negative_attention_mask,
+                        attention_mask=batched_attention_mask,
                         joint_attention_kwargs=self.joint_attention_kwargs,
                         return_dict=False,
                     )[0]
+                    
+                    # Split the batched result back into positive and negative predictions
+                    noise_pred, neg_noise_pred = batched_noise_pred.chunk(2, dim=0)
+                    
+                    # Apply classifier-free guidance
                     noise_pred = neg_noise_pred + guidance_scale * (noise_pred - neg_noise_pred)
+                else:
+                    # No guidance, single forward pass
+                    noise_pred = self.transformer(
+                        hidden_states=latents,
+                        timestep=timestep / 1000,
+                        encoder_hidden_states=prompt_embeds,
+                        txt_ids=text_ids,
+                        img_ids=latent_image_ids,
+                        attention_mask=attention_mask,
+                        joint_attention_kwargs=self.joint_attention_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
