@@ -169,8 +169,8 @@ class ChromaCombinedTimestepTextProjEmbeddings(nn.Module):
         batch_size = timestep.shape[0]
 
         timesteps_proj = self.time_proj(timestep).to(dtype=timestep.dtype)
-        guidance_proj = self.guidance_proj(torch.tensor([0] * batch_size)).to(
-            dtype=timestep.dtype, device=timestep.device
+        guidance_proj = self.guidance_proj(torch.tensor([0] * batch_size, device=timestep.device)).to(
+            dtype=timestep.dtype
         )
 
         mod_proj = self.mod_proj.to(dtype=timesteps_proj.dtype, device=timesteps_proj.device).repeat(batch_size, 1, 1)
