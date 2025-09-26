@@ -104,6 +104,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         use_beta_sigmas: Optional[bool] = False,
         time_shift_type: str = "exponential",
         stochastic_sampling: bool = False,
+        custom_sigmas = None
     ):
         if self.config.use_beta_sigmas and not is_scipy_available():
             raise ImportError("Make sure to install scipy if you want to use beta sigmas.")
@@ -132,6 +133,7 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         self.sigmas = sigmas.to("cpu")  # to avoid too much CPU/GPU communication
         self.sigma_min = self.sigmas[-1].item()
         self.sigma_max = self.sigmas[0].item()
+        self.custom_sigmas = custom_sigmas
 
     @property
     def shift(self):
@@ -342,6 +344,10 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             sigmas = torch.cat([sigmas, torch.ones(1, device=sigmas.device)])
         else:
             sigmas = torch.cat([sigmas, torch.zeros(1, device=sigmas.device)])
+
+        if self.custom_sigmas is not None:
+            timesteps = torch.tensor(self.custom_sigmas[:-1], device=sigmas.device, dtype=torch.float32) * self.config.num_train_timesteps
+            sigmas = torch.tensor(self.custom_sigmas, device=sigmas.device, dtype=torch.float32)
 
         self.timesteps = timesteps
         self.sigmas = sigmas
