@@ -423,6 +423,7 @@ class ChromaTransformer2DModel(
         approximator_num_channels: int = 64,
         approximator_hidden_dim: int = 5120,
         approximator_layers: int = 5,
+        enable_compile: bool = False,
     ):
         super().__init__()
         self.out_channels = out_channels or in_channels
@@ -472,6 +473,12 @@ class ChromaTransformer2DModel(
         self.proj_out = nn.Linear(self.inner_dim, patch_size * patch_size * self.out_channels, bias=True)
 
         self.gradient_checkpointing = False
+
+        if enable_compile:
+            for block in self.transformer_blocks:
+                block.forward = torch.compile(block.forward, mode="max-autotune-no-cudagraphs")
+            for block in self.single_transformer_blocks:
+                block.forward = torch.compile(block.forward, mode="max-autotune-no-cudagraphs")
 
     def forward(
         self,
